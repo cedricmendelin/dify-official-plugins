@@ -4,6 +4,59 @@ Azure OpenAI Service is a cloud-based platform that provides access to advanced 
 ## Configure
 Once the plugin is installed, configure your Azure OpenAI Service Model by providing the Model Type, Deployment Name, API Endpoint URL, Authentication Method, and the Base Model. The API Version is optional when your endpoint already uses the Azure OpenAI `v1` path, for example `https://<resource>.openai.azure.com/openai/v1/`.
 
+### Read Timeout (Self-hosted Community Edition)
+
+Set the optional process environment variable `AZURE_OPENAI_READ_TIMEOUT=600` to
+change the Azure OpenAI SDK read timeout to 600 seconds. When absent, it defaults
+to 300 seconds. Values must be positive, finite numbers of seconds; decimals
+(for example `0.5`) and surrounding whitespace are accepted. Explicitly empty,
+whitespace-only, malformed, zero, negative, NaN, or infinite values raise a
+`ValueError` naming `AZURE_OPENAI_READ_TIMEOUT` when a client is constructed;
+they do not fall back to the default.
+
+This setting applies to all shared Azure OpenAI clients: LLMs (Chat Completions
+and Responses), embeddings, speech-to-text, text-to-speech, and credential
+validation, for both dated and `/openai/v1` endpoints with API key or Microsoft
+Entra ID authentication. It changes only the read timeout; connect remains 5
+seconds, write 10 seconds, pool 315 seconds, and SDK `max_retries` remains 1.
+The read timeout limits inactivity while waiting for response data, including
+gaps between streaming chunks, not total request or stream duration. Retries
+can make the overall operation take longer.
+
+The setting is deployment-wide: all workspaces served by these plugin processes
+use the same configured read timeout.
+
+For a directly launched plugin (including remote debugging), set the variable
+in the plugin process environment. For a daemon-managed plugin, a **compatible
+plugin daemon that forwards `AZURE_OPENAI_READ_TIMEOUT` to plugin subprocesses
+is required**. Daemons whose `BuildPluginCommandEnv` allowlist omits it strip
+the variable even if it is present in the daemon container. This plugin change
+alone does not provide daemon forwarding or guarantee that a released daemon
+includes it.
+
+In Docker Compose, ensure the variable reaches `services.plugin_daemon`.
+Current Dify Compose configurations include `.env` in `env_file`; older or
+customized setups may need an explicit override such as:
+
+```yaml
+services:
+  plugin_daemon:
+    environment:
+      AZURE_OPENAI_READ_TIMEOUT: "${AZURE_OPENAI_READ_TIMEOUT:-600}"
+```
+
+Set `AZURE_OPENAI_READ_TIMEOUT=600` in the Compose `.env`, or set a literal
+value in that override. A host `.env` may only supply Compose interpolation;
+its presence alone does not ensure the daemon container or plugin inherits
+the variable. Recreate the daemon container after changing its environment
+so new plugin processes and cached SDK clients pick up the setting. There
+is no hot reload. The plugin's `.env.example` is a development example, not
+configuration for a plugin already installed inside the daemon.
+
+This does not increase independent outer limits such as
+`PLUGIN_MAX_EXECUTION_TIMEOUT`, `PLUGIN_DAEMON_TIMEOUT`, workflow limits, or
+reverse-proxy timeouts. Review those separately when allowing longer calls.
+
 ### Base Model Configuration
 
 The Base Model field determines how the plugin routes requests and handles model parameters. You can choose from predefined base models (e.g., gpt-4o, gpt-4-turbo) or use the **Custom** option for unlisted Azure OpenAI model families.

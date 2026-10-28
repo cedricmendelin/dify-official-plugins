@@ -1,3 +1,5 @@
+import math
+import os
 import re
 import threading
 from datetime import date
@@ -43,6 +45,20 @@ def _is_valid_azure_version(version: str) -> bool:
 
 _client_cache: dict[tuple, openai.AzureOpenAI | openai.OpenAI] = {}
 _client_cache_lock = threading.Lock()
+
+
+def _resolve_read_timeout() -> float:
+    value = os.environ.get("AZURE_OPENAI_READ_TIMEOUT")
+    if value is None:
+        return 300.0
+    message = "AZURE_OPENAI_READ_TIMEOUT must be a positive finite number of seconds"
+    try:
+        timeout = float(value)
+    except ValueError as e:
+        raise ValueError(message) from e
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(message)
+    return timeout
 
 
 class _CommonAzureOpenAI:
@@ -117,7 +133,9 @@ class _CommonAzureOpenAI:
         is_v1_api = cls._is_v1_api_base(api_base)
 
         credentials_kwargs = {
-            "timeout": openai.Timeout(315.0, read=300.0, write=10.0, connect=5.0),
+            "timeout": openai.Timeout(
+                315.0, read=_resolve_read_timeout(), write=10.0, connect=5.0
+            ),
             "max_retries": 1,
         }
         if is_v1_api:
